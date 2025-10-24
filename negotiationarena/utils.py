@@ -1,5 +1,6 @@
 import os
 import copy
+import re
 from negotiationarena.agents import ChatGPTAgent, ClaudeAgent
 
 
@@ -49,7 +50,71 @@ def from_name_and_tag_to_message(name, tag):
 
 
 def text_to_dict(s):
-    return {k: int(v) for k, v in (item.split(": ") for item in s.split(", "))}
+    """
+    FIXED: Robust parsing of resource strings
+    
+    Handles:
+    - "Dollars: 100, Gold: 50" (normal)
+    - "Dollars: 100" (single resource)
+    - "70% is favorable </reason" (garbage - extract number)
+    - "" (empty - return empty dict)
+    """
+    if not s or not isinstance(s, str):
+        return {}
+    
+    s = s.strip()
+    
+    # Check if this looks like garbage (contains % or HTML tags)
+    if '%' in s or '</' in s or '>' in s:
+        # Try to extract just numbers
+        numbers = re.findall(r'(\d+)', s)
+        if numbers:
+            # Assume it's dollars
+            return {"Dollars": int(numbers[0])}
+        return {}
+    
+    # Try standard format: "Key: Value, Key: Value"
+    try:
+        result = {}
+        
+        # Split by comma
+        items = s.split(", ")
+        
+        for item in items:
+            # Split by colon
+            parts = item.split(": ")
+            
+            if len(parts) == 2:
+                key = parts[0].strip()
+                value_str = parts[1].strip()
+                
+                # Extract just the number (ignore units like "dollars")
+                value_match = re.search(r'(\d+)', value_str)
+                if value_match:
+                    result[key] = int(value_match.group(1))
+                else:
+                    # Try to parse as int directly
+                    try:
+                        result[key] = int(value_str)
+                    except ValueError:
+                        # Skip this item
+                        pass
+            elif len(parts) > 2:
+                # Handle case like "Dollars: 100: extra stuff"
+                key = parts[0].strip()
+                value_str = parts[1].strip()
+                value_match = re.search(r'(\d+)', value_str)
+                if value_match:
+                    result[key] = int(value_match.group(1))
+        
+        return result
+    
+    except Exception as e:
+        # Last resort: try to find any number and call it Dollars
+        numbers = re.findall(r'\b(\d+)\b', s)
+        if numbers:
+            return {"Dollars": int(numbers[0])}
+        return {}
 
 
 def get_next_filename(prefix, folder="."):

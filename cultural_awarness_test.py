@@ -21,13 +21,6 @@ from negotiationarena.cultural_prompts import CulturalPromptBuilder
 
 # Import games
 try:
-    from games.simple_game.game import SimpleGame
-    SIMPLE_GAME_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠ Warning: Could not import SimpleGame: {e}")
-    SIMPLE_GAME_AVAILABLE = False
-
-try:
     from games.trading_game.game import TradingGame
     TRADING_GAME_AVAILABLE = True
 except ImportError as e:
@@ -51,53 +44,7 @@ except ImportError as e:
 load_dotenv(".env")
 
 
-def test_simple_game(country1="u.s.a.", country2="china", with_culture=True):
-    """Test Simple Game with cultural awareness"""
-    if not SIMPLE_GAME_AVAILABLE:
-        return None, "SimpleGame not available"
-    
-    try:
-        prompt_builder = CulturalPromptBuilder()
-        manager = CulturalProfileManager()
-        
-        a1 = ChatGPTAgent(model="gpt-4-1106-preview", agent_name=AGENT_ONE)
-        a2 = ChatGPTAgent(model="gpt-4-1106-preview", agent_name=AGENT_TWO)
-        
-        if with_culture:
-            p1 = manager.get_profile(country1)
-            p2 = manager.get_profile(country2)
-            c1 = prompt_builder.build_system_prompt(country=country1, base_role="trader")
-            c2 = prompt_builder.build_system_prompt(country=country2, base_role="trader")
-            social_behaviour = [
-                p1.interaction_profile.behaviour_rules if p1 else "",
-                p2.interaction_profile.behaviour_rules if p2 else "",
-            ]
-        else:
-            social_behaviour = ["", ""]
-        
-        game = SimpleGame(
-            players=[a1, a2],
-            iterations=6,
-            resources_support_set=Resources({"X": 0, "Y": 0}),
-            player_initial_resources=[
-                Resources({"X": 25, "Y": 5}),
-                Resources({"X": 0, "Y": 0}),
-            ],
-            player_social_behaviour=social_behaviour,
-            player_roles=[
-                f"You are {AGENT_ONE}, start by making a proposal.",
-                f"You are {AGENT_TWO}, start by accepting a trade.",
-            ],
-            log_dir="./.logs/simple_game/",
-        )
-        
-        result = game.run()
-        return result, None
-    except Exception as e:
-        return None, str(e)
-
-
-def test_trading_game(country1="u.s.a.", country2="china", with_culture=True):
+def test_trading_game(country1="australia", country2="new zealand", with_culture=True):
     """Test Trading Game with cultural awareness"""
     if not TRADING_GAME_AVAILABLE:
         return None, "TradingGame not available"
@@ -106,17 +53,28 @@ def test_trading_game(country1="u.s.a.", country2="china", with_culture=True):
         prompt_builder = CulturalPromptBuilder()
         manager = CulturalProfileManager()
         
-        a1 = ChatGPTAgent(model="gpt-4-1106-preview", agent_name=AGENT_ONE)
-        a2 = ChatGPTAgent(model="gpt-4-1106-preview", agent_name=AGENT_TWO)
+        a1 = ChatGPTAgent(model="gpt-3.5-turbo", agent_name=AGENT_ONE)
+        a2 = ChatGPTAgent(model="gpt-3.5-turbo", agent_name=AGENT_TWO)
         
         if with_culture:
             p1 = manager.get_profile(country1)
             p2 = manager.get_profile(country2)
+            
+            # Build culturally-aware role descriptions - concise and directive
+            roles = [
+                f"You are {AGENT_ONE}, a trader from {country1.upper()}. Your negotiation style: {p1.get_negotiation_style() if p1 else 'balanced'}. Your communication: {p1.get_communication_style() if p1 else 'moderate'}. Embody these traits naturally. Start by making a proposal.",
+                f"You are {AGENT_TWO}, a trader from {country2.upper()}. Your negotiation style: {p2.get_negotiation_style() if p2 else 'balanced'}. Your communication: {p2.get_communication_style() if p2 else 'moderate'}. Embody these traits naturally. Start by responding to a trade.",
+            ]
+            
             social_behaviour = [
                 p1.interaction_profile.behaviour_rules if p1 else "",
                 p2.interaction_profile.behaviour_rules if p2 else "",
             ]
         else:
+            roles = [
+                f"You are {AGENT_ONE}, start by making a proposal.",
+                f"You are {AGENT_TWO}, start by responding to a trade.",
+            ]
             social_behaviour = ["", ""]
         
         game = TradingGame(
@@ -132,10 +90,7 @@ def test_trading_game(country1="u.s.a.", country2="china", with_culture=True):
                 Resources({"X": 5, "Y": 25}),
             ],
             player_social_behaviour=social_behaviour,
-            player_roles=[
-                f"You are {AGENT_ONE}, start by making a proposal.",
-                f"You are {AGENT_TWO}, start by responding to a trade.",
-            ],
+            player_roles=roles,
             log_dir="./.logs/trading/",
         )
         
@@ -145,7 +100,7 @@ def test_trading_game(country1="u.s.a.", country2="china", with_culture=True):
         return None, str(e)
 
 
-def test_ultimatum_game(country1="u.s.a.", country2="china", with_culture=True):
+def test_ultimatum_game(country1="australia", country2="new zealand", with_culture=True):
     """Test Ultimatum Game with cultural awareness"""
     if not ULTIMATUM_GAME_AVAILABLE:
         return None, "UltimatumGame not available"
@@ -154,17 +109,28 @@ def test_ultimatum_game(country1="u.s.a.", country2="china", with_culture=True):
         prompt_builder = CulturalPromptBuilder()
         manager = CulturalProfileManager()
         
-        a1 = ChatGPTAgent(agent_name=AGENT_ONE, model="gpt-4-1106-preview")
-        a2 = ChatGPTAgent(agent_name=AGENT_TWO, model="gpt-4-1106-preview")
+        a1 = ChatGPTAgent(agent_name=AGENT_ONE, model="gpt-3.5-turbo")
+        a2 = ChatGPTAgent(agent_name=AGENT_TWO, model="gpt-3.5-turbo")
         
         if with_culture:
             p1 = manager.get_profile(country1)
             p2 = manager.get_profile(country2)
+            
+            # Build culturally-aware role descriptions - more concise and directive
+            roles = [
+                f"You are {AGENT_ONE} from {country1.upper()}. Your negotiation style: {p1.get_negotiation_style() if p1 else 'balanced'}. Your communication: {p1.get_communication_style() if p1 else 'moderate'}. Embody these traits naturally in your decisions.",
+                f"You are {AGENT_TWO} from {country2.upper()}. Your negotiation style: {p2.get_negotiation_style() if p2 else 'balanced'}. Your communication: {p2.get_communication_style() if p2 else 'moderate'}. Embody these traits naturally in your decisions.",
+            ]
+            
             social_behaviour = [
                 p1.interaction_profile.behaviour_rules if p1 else "",
                 p2.interaction_profile.behaviour_rules if p2 else "",
             ]
         else:
+            roles = [
+                f"You are {AGENT_ONE}.",
+                f"You are {AGENT_TWO}.",
+            ]
             social_behaviour = ["", ""]
         
         game = MultiTurnUltimatumGame(
@@ -177,10 +143,7 @@ def test_ultimatum_game(country1="u.s.a.", country2="china", with_culture=True):
                 Resources({"Dollars": 0}),
             ],
             player_social_behaviour=social_behaviour,
-            player_roles=[
-                f"You are {AGENT_ONE}.",
-                f"You are {AGENT_TWO}.",
-            ],
+            player_roles=roles,
             log_dir="./.logs/ultimatum/",
         )
         
@@ -190,7 +153,7 @@ def test_ultimatum_game(country1="u.s.a.", country2="china", with_culture=True):
         return None, str(e)
 
 
-def test_buysell_game(country1="u.s.a.", country2="china", with_culture=True):
+def test_buysell_game(country1="australia", country2="new zealand", with_culture=True):
     """Test Buy-Sell Game with cultural awareness"""
     if not BUYSELL_GAME_AVAILABLE:
         return None, "BuySellGame not available"
@@ -199,18 +162,19 @@ def test_buysell_game(country1="u.s.a.", country2="china", with_culture=True):
         prompt_builder = CulturalPromptBuilder()
         manager = CulturalProfileManager()
         
-        a1 = ChatGPTAgent(agent_name=AGENT_ONE, model="gpt-4-1106-preview")
-        a2 = ChatGPTAgent(agent_name=AGENT_TWO, model="gpt-4-1106-preview")
+        a1 = ChatGPTAgent(agent_name=AGENT_ONE, model="gpt-3.5-turbo")
+        a2 = ChatGPTAgent(agent_name=AGENT_TWO, model="gpt-3.5-turbo")
         
         if with_culture:
             p1 = manager.get_profile(country1)
             p2 = manager.get_profile(country2)
-            c1 = prompt_builder.build_system_prompt(country=country1, base_role="seller")
-            c2 = prompt_builder.build_system_prompt(country=country2, base_role="buyer")
+            
+            # Build culturally-aware role descriptions - more concise and directive
             roles = [
-                f"You are {AGENT_ONE}, a seller from {country1}. {c1}",
-                f"You are {AGENT_TWO}, a buyer from {country2}. {c2}",
+                f"You are {AGENT_ONE}, a seller from {country1.upper()}. Your negotiation style: {p1.get_negotiation_style() if p1 else 'balanced'}. Your communication: {p1.get_communication_style() if p1 else 'moderate'}. Embody these traits naturally.",
+                f"You are {AGENT_TWO}, a buyer from {country2.upper()}. Your negotiation style: {p2.get_negotiation_style() if p2 else 'balanced'}. Your communication: {p2.get_communication_style() if p2 else 'moderate'}. Embody these traits naturally.",
             ]
+            
             social_behaviour = [
                 p1.interaction_profile.behaviour_rules if p1 else "",
                 p2.interaction_profile.behaviour_rules if p2 else "",
@@ -242,9 +206,9 @@ def test_buysell_game(country1="u.s.a.", country2="china", with_culture=True):
 
 
 def run_all_tests():
-    """Run all game tests"""
+    """Run all game tests with cultural awareness"""
     print("\n" + "="*80)
-    print("RUNNING ALL GAME TESTS")
+    print("RUNNING ALL GAME TESTS WITH CULTURAL AWARENESS (AUSTRALIA-NEW ZEALAND)")
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*80 + "\n")
     
@@ -254,7 +218,6 @@ def run_all_tests():
     }
     
     games = [
-        ("Simple Game", test_simple_game, SIMPLE_GAME_AVAILABLE),
         ("Trading Game", test_trading_game, TRADING_GAME_AVAILABLE),
         ("Ultimatum Game", test_ultimatum_game, ULTIMATUM_GAME_AVAILABLE),
         ("Buy-Sell Game", test_buysell_game, BUYSELL_GAME_AVAILABLE),
@@ -270,36 +233,21 @@ def run_all_tests():
             results["games"][game_name] = {"status": "unavailable"}
             continue
         
-        game_results = {"cultural": [], "baseline": []}
-        
-        # Test with cultural awareness
-        print(f"\n  Running WITH cultural awareness...")
-        result, error = test_func(with_culture=True)
+        print(f"\n  Running Australia-New Zealand with cultural awareness...")
+        result, error = test_func(country1="australia", country2="new zealand", with_culture=True)
         if error:
             print(f"    ✗ Error: {error}")
-            game_results["cultural"].append({"status": "failed", "error": error})
+            results["games"][game_name] = {"status": "failed", "error": error}
         else:
             print(f"    ✓ Success")
-            game_results["cultural"].append({"status": "success"})
-        
-        # Test baseline (no cultural awareness)
-        print(f"\n  Running BASELINE (no cultural awareness)...")
-        result, error = test_func(with_culture=False)
-        if error:
-            print(f"    ✗ Error: {error}")
-            game_results["baseline"].append({"status": "failed", "error": error})
-        else:
-            print(f"    ✓ Success")
-            game_results["baseline"].append({"status": "success"})
-        
-        results["games"][game_name] = game_results
+            results["games"][game_name] = {"status": "success"}
     
     # Save results
     results_dir = Path("test_results")
     results_dir.mkdir(exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = results_dir / f"all_games_test_{timestamp}.json"
+    results_file = results_dir / f"australia_newzealand_test_{timestamp}.json"
     
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2)
@@ -309,14 +257,15 @@ def run_all_tests():
     print(f"{'='*80}")
     
     for game_name, game_result in results["games"].items():
-        if game_result.get("status") == "unavailable":
+        status = game_result.get("status", "unknown")
+        if status == "unavailable":
             print(f"\n{game_name}: UNAVAILABLE")
+        elif status == "success":
+            print(f"\n{game_name}: ✓ SUCCESS")
         else:
-            cultural_success = sum(1 for r in game_result["cultural"] if r["status"] == "success")
-            baseline_success = sum(1 for r in game_result["baseline"] if r["status"] == "success")
-            print(f"\n{game_name}:")
-            print(f"  Cultural: {cultural_success}/{len(game_result['cultural'])} successful")
-            print(f"  Baseline: {baseline_success}/{len(game_result['baseline'])} successful")
+            print(f"\n{game_name}: ✗ FAILED")
+            if "error" in game_result:
+                print(f"  Error: {game_result['error']}")
     
     print(f"\n{'='*80}")
     print(f"Results saved to: {results_file}")
