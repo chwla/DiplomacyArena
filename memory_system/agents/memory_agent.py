@@ -1,9 +1,13 @@
 """
-Memory-augmented negotiation agent with OpenAI backend
+Memory-augmented negotiation agent with OpenAI and Gemini backends
 """
 from typing import List, Dict, Optional
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from ..core.memory_store import MemoryStore
 from ..core.retriever import MemoryRetriever
@@ -13,13 +17,13 @@ from ..utils.embeddings import EmbeddingGenerator
 
 class MemoryAugmentedNegotiator:
     """
-    Standalone memory-augmented negotiation agent using OpenAI
+    Standalone memory-augmented negotiation agent using OpenAI or Gemini
     """
     
     def __init__(
         self,
         agent_name: str,
-        llm_backend: str = "openai",
+        llm_backend: str = "llama",  # Changed default to llama
         model: str = None,
         memory_store: MemoryStore = None,
         retriever: MemoryRetriever = None,
@@ -32,7 +36,7 @@ class MemoryAugmentedNegotiator:
         
         Args:
             agent_name: Name of this agent
-            llm_backend: "openai" or "gemini"
+            llm_backend: "openai", "gemini", or "llama" (default: "llama")
             model: Model name
             memory_store: Storage backend
             retriever: Retrieval system
@@ -61,6 +65,8 @@ class MemoryAugmentedNegotiator:
             self._init_openai(model, api_key)
         elif llm_backend == "gemini":
             self._init_gemini(model, api_key)
+        elif llm_backend == "llama":
+            self._init_llama(model, api_key)
         else:
             self.llm_client = None
             self.model = model
@@ -75,9 +81,9 @@ class MemoryAugmentedNegotiator:
                 "Install with: pip install openai"
             )
         
-        api_key = api_key or os.getenv('OPENAI_API_KEY')
+        api_key = api_key or os.environ.get('OPENAI_API_KEY')
         if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment")
+            raise ValueError("OPENAI_API_KEY not found in environment or .env file")
         
         self.model = model or "gpt-4"
         self.llm_client = OpenAI(api_key=api_key)
@@ -94,15 +100,48 @@ class MemoryAugmentedNegotiator:
                 "Install with: pip install google-generativeai"
             )
         
-        api_key = api_key or os.getenv('GEMINI_API_KEY')
+        # Try both GEMINI_API_KEY and GOOGLE_API_KEY (reads from .env via load_dotenv)
+        api_key = api_key or os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
         if not api_key:
-            raise ValueError("GEMINI_API_KEY not found in environment")
+            raise ValueError(
+                "API key not found. Set GEMINI_API_KEY or GOOGLE_API_KEY in .env file"
+            )
         
         genai.configure(api_key=api_key)
-        self.model = model or "gemini-2.5-flash"
-        self.llm_client = genai.GenerativeModel(self.model)
+        # Use the stable Gemini 1.5 Flash model
+        self.model = model or "gemini-1.5-flash-latest"
+        self.llm_client = genai.GenerativeModel(
+            self.model,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+            )
+        )
         
         print(f"[MemoryAgent] Initialized with Gemini model: {self.model}")
+    
+    def _init_llama(self, model: str = None, api_key: str = None):
+        """Initialize DeepSeek R1 via OpenRouter (FREE with rate limiting)"""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "openai not installed. "
+                "Install with: pip install openai"
+            )
+        
+        self.model = model or "deepseek/deepseek-r1-distill-llama-70b:free"
+        
+        # Use OpenRouter API - FREE with rate limiting
+        openrouter_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+        if not openrouter_key:
+            raise ValueError("OPENROUTER_API_KEY not found in .env file")
+        
+        self.llm_client = OpenAI(
+            api_key=openrouter_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
+        
+        print(f"[MemoryAgent] Initialized with OpenRouter model: {self.model}")
     
     def start_session(self, session_id: str):
         """Initialize a new negotiation session"""
@@ -198,8 +237,26 @@ class MemoryAugmentedNegotiator:
             return response.choices[0].message.content
         
         elif self.llm_backend == "gemini":
-            response = self.llm_client.generate_content(prompt)
-            return response.text
+            try:
+                response = self.llm_client.generate_content(prompt)
+                return response.text
+            except Exception as e:
+                # Handle potential Gemini API errors
+                print(f"[MemoryAgent] Gemini API error: {e}")
+                raise
+        
+        elif self.llm_backend == "llama":
+            try:
+                response = self.llm_client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                # Handle potential Together AI API errors
+                print(f"[MemoryAgent] Llama API error: {e}")
+                raise
         
         else:
             raise ValueError(f"Unsupported LLM backend: {self.llm_backend}")

@@ -1,5 +1,4 @@
 import copy
-import openai
 import os
 import random
 from negotiationarena.agents.agents import Agent
@@ -7,12 +6,16 @@ import time
 from negotiationarena.constants import AGENT_TWO, AGENT_ONE
 from negotiationarena.agents.agent_behaviours import SelfCheckingAgent
 from copy import deepcopy
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 
 
 class LLama2ChatAgent(Agent):
     def __init__(
         self,
-        model="meta-llama/Llama-2-70b-chat-hf",
+        model="meta-llama/llama-3.1-70b-instruct",
         temperature=0.7,
         max_tokens=400,
         seed=None,
@@ -30,17 +33,17 @@ class LLama2ChatAgent(Agent):
         )
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.client = openai.OpenAI(
-            base_url="https://api.endpoints.anyscale.com/v1",
-            api_key=os.environ.get("ANY_SCALE"),
+        
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not found in .env")
+        
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
         )
 
     def __deepcopy__(self, memo):
-        """
-        Deepcopy is needed because we cannot pickle the llama object.
-        :param memo:
-        :return:
-        """
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -51,28 +54,29 @@ class LLama2ChatAgent(Agent):
         return result
 
     def init_agent(self, system_prompt, role):
+        self.conversation = []
+        
         if AGENT_ONE in self.agent_name:
-            # we use the user role to tell the assistant that it has to start.
-
             self.update_conversation_tracking(
                 self.prompt_entity_initializer, system_prompt
             )
             self.update_conversation_tracking("user", role)
         elif AGENT_TWO in self.agent_name:
-            system_prompt = system_prompt + role
+            combined_prompt = system_prompt + "\n\n" + role
             self.update_conversation_tracking(
-                self.prompt_entity_initializer, system_prompt
+                self.prompt_entity_initializer, combined_prompt
             )
         else:
-            raise "No Player 1 or Player 2 in role"
+            raise ValueError("Agent name must contain 'Player 1' or 'Player 2'")
 
     def chat(self):
-        chat_completion = self.client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=self.conversation,
-            temperature=0.7,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
         )
-        return chat_completion.choices[0].message.content
+        return response.choices[0].message.content
 
     def update_conversation_tracking(self, role, message):
         self.conversation.append({"role": role, "content": message})

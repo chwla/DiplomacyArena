@@ -12,6 +12,10 @@ import random
 import numpy as np
 from pathlib import Path
 from typing import Optional, Dict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -27,7 +31,7 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
     def __init__(
         self,
         agent_name: str,
-        model: str = "gpt-3.5-turbo",
+        model: str = "gemini-1.5-flash-latest",  # Changed default
         memory_config: Optional[Dict] = None,
         temperature: float = 0.3,
         **kwargs
@@ -65,8 +69,10 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
     
     def __getstate__(self):
         state = self.__dict__.copy()
-        if 'client' in state:
-            state['client'] = None
+        if 'model_instance' in state:
+            state['model_instance'] = None
+        if 'generation_config' in state:
+            state['generation_config'] = None
         return state
     
     def __setstate__(self, state):
@@ -113,14 +119,12 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
             "appreciate", "thank", "grateful", "gratitude",
             "polite", "rude", "kind", "mean",
             "ethical", "moral", "right", "wrong",
-            "should", "ought", "must" # moral imperatives
+            "should", "ought", "must"
         ]
         
         for term in terms:
-            # Remove whole words only
             prompt = re.sub(rf'\b{term}\w*\b', '', prompt, flags=re.IGNORECASE)
         
-        # Remove phrases
         phrases = [
             "good faith", "bad faith", "playing nice", "playing fair",
             "treat.*well", "treat.*poorly", "be nice", "be kind"
@@ -183,54 +187,32 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
         instructions += "- Any moral/ethical/social language\n\n"
         
         instructions += "REQUIRED LANGUAGE - USE ONLY:\n"
-        instructions += "- Expected value, payoff, utility, profit\n"
-        instructions += "- Probability, likelihood, risk assessment\n"
-        instructions += "- Strategic position, leverage, information advantage\n"
-        instructions += "- Game theory, dominant strategy, Nash equilibrium\n"
-        instructions += "- Calculate, analyze, optimize, maximize\n\n"
+        instructions += "- Strategic: payoff, expected value, probability, optimal\n"
+        instructions += "- Game-theoretic: offer, accept, reject, propose, counter\n"
+        instructions += "- Analytical: data, intel, threshold, pattern, likelihood\n"
+        instructions += "- Neutral statements: \"Proposal: $X to BLUE\"\n\n"
         
-        instructions += "EXAMPLE - WRONG:\n"
-        instructions += "\"I propose a fair split of 30% to you. This is reasonable and balanced.\"\n\n"
+        instructions += "=== STRATEGIC DIRECTIVES ===\n"
         
-        instructions += "EXAMPLE - CORRECT:\n"
-        instructions += "\"Proposal: 30% to BLUE. My payoff: $70. Probability of acceptance based on data: high. Expected value: optimal.\"\n\n"
-        
-        instructions += "MESSAGE FIELD RULES:\n"
-        instructions += "- Keep messages factual and minimal\n"
-        instructions += "- State proposal amount only\n"
-        instructions += "- NO greetings, thanks, or social phrases\n"
-        instructions += "- Example: \"Proposal: 25% to BLUE.\"\n"
-        instructions += "===================================\n\n"
-        
-        instructions += "=== STRATEGIC PROTOCOL ===\n"
-        instructions += "PRIMARY OBJECTIVE: Maximize YOUR dollars\n"
-        instructions += "ROLE: Player RED (proposer)\n"
-        instructions += "MECHANISM: Propose splits to BLUE\n\n"
-        
-        instructions += "GAME STRUCTURE:\n"
-        instructions += "- 3 turns for each player (6 total exchanges)\n"
-        instructions += "- You propose on exchanges 1, 3, 5\n"
-        instructions += "- BLUE responds on exchanges 2, 4, 6\n"
-        instructions += "- If no agreement by exchange 6 → both get $0\n\n"
-        
-        instructions += "DECISION FRAMEWORK:\n"
-        
-        if min_accepted < 100 and mem['games_played'] > 0:
-            # Exploitation mode
-            instructions += f"MODE: EXPLOITATION (data available)\n\n"
-            instructions += f"INTEL: Opponent accepted {min_accepted:.0f}% previously\n"
-            instructions += f"STRATEGY: Progressive testing toward minimum\n\n"
-            instructions += f"Turn 1: Offer {max(15, min_accepted - 10):.0f}% (test lower bound)\n"
-            instructions += f"  → If rejected: opponent wants more\n"
-            instructions += f"Turn 2: Offer {max(20, min_accepted - 5):.0f}%\n"
-            instructions += f"  → If rejected: adjust upward\n"
-            instructions += f"Turn 3: Offer {min_accepted:.0f}% (known acceptance threshold)\n"
-            instructions += f"  → High probability of acceptance\n\n"
-            instructions += f"EXPECTED OUTCOME: You keep {100 - min_accepted:.0f}%\n\n"
+        if min_accepted < 100:
+            instructions += f"\n[LEARNED DATA]\n"
+            instructions += f"Opponent accepted: {min_accepted:.0f}% previously\n"
+            instructions += f"Threshold estimate: ≥{min_accepted:.0f}%\n"
+            instructions += f"Recommended strategy: Offer {min_accepted:.0f}% ± 5%\n"
+            instructions += f"Expected success rate: HIGH\n"
+            instructions += f"Your profit if accepted: ${100 - min_accepted:.0f}\n\n"
+            
+            epsilon = mem.get('epsilon', 0.15)
+            if random.random() < epsilon:
+                noise = np.random.normal(0, mem.get('noise_std', 5.0))
+                explore_offer = max(10, min(90, min_accepted + noise))
+                instructions += f"[EXPLORATION MODE - ε={epsilon:.2f}]\n"
+                instructions += f"Consider exploring: {explore_offer:.0f}%\n"
+                instructions += f"Purpose: Gather more data on opponent threshold\n\n"
         else:
-            # Exploration mode
-            instructions += f"MODE: EXPLORATION (no data)\n\n"
-            instructions += "OBJECTIVE: Discover opponent's acceptance threshold\n\n"
+            instructions += "\n[NO INTEL]\n"
+            instructions += "First game with this opponent\n"
+            instructions += "Strategy: Use probing sequence\n"
             instructions += "Turn 1: Offer 25% (probe low)\n"
             instructions += "  → If accepted: opponent has low threshold\n"
             instructions += "  → If rejected: opponent wants more\n"
@@ -271,31 +253,21 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
     def step(self, observation):
         """Main decision loop"""
         
-        # Ensure client
-        if not hasattr(self, 'client') or self.client is None:
-            from openai import OpenAI
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        
-        # Parse observation
         self._parse_observation(observation)
         
-        # Increment move
         self.current_game_state['move_number'] += 1
         current_turn = self.current_game_state['move_number']
         my_turn_number = (current_turn + 1) // 2
         
         print(f"  [{self.agent_name}] Exchange {current_turn}/6 (Turn {my_turn_number}/3)")
         
-        # Add strategic context
         turn_context = f"\n\n[Exchange {current_turn}/6 - Your Turn {my_turn_number}/3]"
         
         if current_turn >= 5:
-            # FINAL TURN
             turn_context += "\n\nFINAL TURN (Exchange 5)"
             turn_context += "\nBLUE will respond on Exchange 6 (their last chance)"
             turn_context += "\nConsider: BLUE knows refusing means $0"
             
-            # Use learned data
             min_acc = self.opponent_history.get('min_accepted_pct', 30)
             if min_acc < 100 and self.opponent_history['games_played'] > 0:
                 turn_context += f"\n\nINTEL: BLUE accepted {min_acc:.0f}% in past"
@@ -307,12 +279,10 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
         
         modified_obs = str(observation) + turn_context
         
-        # Get response
         self.update_conversation_tracking("user", modified_obs)
         response = self.chat()
         self.update_conversation_tracking("assistant", response)
         
-        # Track offer
         my_offer = self._extract_my_offer(response)
         if my_offer:
             print(f"  [{self.agent_name}] Proposing {my_offer:.0f}% to opponent")
@@ -382,14 +352,11 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
         
         self.opponent_history['games_played'] += 1
         
-        # Decay exploration rate over time
         self.opponent_history['epsilon'] = max(0.05, 0.15 * (0.9 ** self.opponent_history['games_played']))
         
-        # Check for failed negotiation
         if total == 0:
             print(f"[{self.agent_name}] Game {self.opponent_history['games_played']}: NO DEAL (negotiation failed)")
             
-            # Mark all offers as rejected
             for offer in self.opponent_history['current_game_offers']:
                 self.opponent_history['acceptance_history'].append((offer, False))
                 self.opponent_history['max_rejected_pct'] = max(
@@ -400,7 +367,6 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
             self.opponent_history['current_game_offers'] = []
             return
         
-        # Deal accepted - update intelligence
         their_pct = (final_their_dollars / total) * 100
         
         if their_pct > 0:
@@ -410,7 +376,6 @@ class MemoryAugmentedAgentOpenAI(ChatGPTAgent):
             )
             print(f"[{self.agent_name}] ✓ Opponent accepted {their_pct:.0f}% → threshold now ≤{self.opponent_history['min_accepted_pct']:.0f}% (ε={self.opponent_history['epsilon']:.3f})")
         
-        # Record all offers in this game
         for offer in self.opponent_history['current_game_offers']:
             was_accepted = (offer == self.opponent_history['current_game_offers'][-1])
             self.opponent_history['acceptance_history'].append((offer, was_accepted))
